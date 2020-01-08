@@ -27,18 +27,15 @@ class SpcFile():
         else:
             print('No setup parameters supplied. Cannot evaluate spc file.')
 
-    def create_photon_array(self, save_data=False):
-        #Shortcut to create photon data arrays
-        #Tried this with large dataset and it just runs out of memory. So this might not be possible (at least on my laptop).
-        #Better wat may be to specify what you want and have it spit out that i.e MacroTime and MicroTime etc.
-        #Do not use at moment
-        self.create_array(save_data=save_data, array_type='photon')
+    def create_shortened_histo_array(self, time_range, save_data=False):
+    	#time_range is a tuple of form (lower, upper) (ms)
+        self.create_array(save_data=save_data, array_type='shortened_hist', time_range=time_range)
 
     def create_histo_array(self, save_data=False):
         #Shortcut to create histogram arrays
         self.create_array(save_data=save_data, array_type='hist')
 
-    def create_array(self, save_data=False, array_type='hist'):
+    def create_array(self, save_data=False, array_type='hist', time_range=None):
         root=tk.Tk()
         root.withdraw()
         with open(self.filename, "rb") as binary_file:
@@ -48,10 +45,8 @@ class SpcFile():
             routing_bits=self.read_specific_bits(3,6,info_byte)
             invalid_data=self.read_single_bit(7, info_byte)
             #Make some data containers
-            if array_type=='hist':
+            if array_type=='hist' or array_type=='shortened_hist':
                 PhotonTimeList=[]
-            elif array_type == 'photon':
-                PhotonDataList=[]
             data_start=False
             self.image_arr=np.ndarray((self.ImageSizeX, self.ImageSizeY), dtype='object')
             x_counter=0
@@ -60,7 +55,8 @@ class SpcFile():
             #MacroTime counters
             MacroTimeOverflows=0
             MacroTime_val=0
-            last_MT=0 
+            last_MT=0
+            pixel_start_time=0 
 
             #Read in file
             while True:
@@ -79,36 +75,32 @@ class SpcFile():
                         #Start of scan
                         if data_start == False:
                             data_start=True
+                            pixel_start_time=MacroTime_val*macro_clock
                         #End of scan
                         else:
-                            if array_type=='hist':
+                            if array_type=='hist' or array_type=='shortened_hist':
                                 PhotonTimes=np.asarray(PhotonTimeList, dtype='float')
                                 self.image_arr[x_counter][y_counter]=self.construct_histogram(PhotonTimes, self.ADCRe, plotting=False)
                                 break
-                            elif array_type=='photon':
-                                self.image_arr[x_counter][y_counter]=np.asarray(PhotonDataList, dtype=('f,f,?'))
-                                break
                     elif ScanClk =="Pixel":
                         #For each pixel in a line
-                        if array_type=='hist':
+                        if array_type=='hist' or array_type=='shortened_hist':
                             PhotonTimes=np.asarray(PhotonTimeList, dtype='float')
                             self.image_arr[x_counter][y_counter]=self.construct_histogram(PhotonTimes, self.ADCRe, plotting=False)
-                        elif array_type=='photon':
-                            self.image_arr[x_counter][y_counter]=np.asarray(PhotonDataList, dtype=('f,f,?'))
                         if pos_direction == True:
                             x_counter+=1
                         else:
                             x_counter-=1
+                        pixel_start_time=MacroTime_val*macro_clock
                         PhotonTimeList = []
                     elif ScanClk =="Line/Pixel":
                         #Last pixel of the line and a new line starts
-                        if array_type=='hist':
+                        if array_type=='hist' or array_type=='shortened_hist':
                             PhotonTimes=np.asarray(PhotonTimeList, dtype='float')
                             self.image_arr[x_counter][y_counter]=self.construct_histogram(PhotonTimes, self.ADCRe, plotting=False)
-                        elif array_type=='photon':
-                            self.image_arr[x_counter][y_counter]=np.asarray(PhotonDataList, dtype=('f,f,?'))
                         y_counter+=1
                         pos_direction = not pos_direction
+                        pixel_start_time=MacroTime_val*macro_clock
                         PhotonTimeList = []
                     elif ScanClk == "Pixel/Frame" or data_packet =="Frame" or data_packet =="Line":
                         #TO DO: Not used at moment. Will do logic for these later
@@ -117,7 +109,7 @@ class SpcFile():
                         if data_start == True:
                             #MicroTime
                             MicroTime_val=self.MicroTime(data_packet[5], self.TACRange, self.TACGain) 
-                            if array_type =='photon':
+                            if array_type =='shortened_hist':
                                 #MacroTime
                                 if data_packet[2] == False: #For when there has been no overflow
                                     MacroTime_val=(MacroTime_val+data_packet[3]-last_MT)
@@ -129,13 +121,17 @@ class SpcFile():
                                 if MacroTimeOverflows != 0:
                                     MacroTime_val+=(2**12*MacroTimeOverflows)
                                     MacroTimeOverflows=0
-                                PhotonDataList.append(((MacroTime_val*macro_clock), MicroTime_val, data_packet[6]))#returns macro, micro and gap flag.
+                                if (time_range[0]*1e6)<=((MacroTime_val*macro_clock)-pixel_start_time)<=(time_range[1]*1e6):
+                                	PhotonTimeList.append(MicroTime_val)
+                                else:
+                                	pass
+                                #PhotonDataList.append(((MacroTime_val*macro_clock), MicroTime_val, data_packet[6]))#returns macro, micro and gap flag.
                             if array_type=='hist':
                                 PhotonTimeList.append(MicroTime_val)
                         else:
                             pass   
-                if save_data==True:
-                    np.save('output_array.npy', self.image_arr)    
+        if save_data==True:
+            np.save('output_array.npy', self.image_arr)    
 
     def read_specific_bits(self, bit_start, bit_stop, input_val):
         bit_mask=[0,0,0,0,0,0,0,0]
@@ -212,10 +208,11 @@ class SpcFile():
 
 
 #For testing
-#root=tk.Tk()
-#root.withdraw()
-#filename = askopenfilename(initialdir="C:\\", title="Choose an spc file")
-#spcF=SpcFile(filename)
+root=tk.Tk()
+root.withdraw()
+filename = askopenfilename(initialdir="C:\\", title="Choose an spc file")
+spcF=SpcFile(filename)
+spcF.create_shortened_histo_array((0,2.5),save_data=True)
 
 
 
