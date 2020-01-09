@@ -40,7 +40,7 @@ class SpcFile():
         root.withdraw()
         with open(self.filename, "rb") as binary_file:
             #Header data for the .spc file
-            macro_clock=(int.from_bytes(binary_file.read(3), 'little'))
+            macro_clock=(int.from_bytes(binary_file.read(3), 'little'))/10 #The value is in 0.1ns units. i.e 500=50ns. So conver to ns
             info_byte=int.from_bytes(binary_file.read(1), 'little')
             routing_bits=self.read_specific_bits(3,6,info_byte)
             invalid_data=self.read_single_bit(7, info_byte)
@@ -212,7 +212,7 @@ root=tk.Tk()
 root.withdraw()
 filename = askopenfilename(initialdir="C:\\", title="Choose an spc file")
 spcF=SpcFile(filename)
-spcF.create_shortened_histo_array((0,2.5),save_data=True)
+spcF.create_shortened_histo_array((3,4),save_data=True)
 
 
 
