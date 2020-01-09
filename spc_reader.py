@@ -3,6 +3,7 @@ from tkinter.filedialog import askopenfilename
 import numpy as np
 import matplotlib.pyplot as plt
 from set_reader import SetFile
+from os.path import exists
 
 class SpcFile():
     def __init__(self, filename, setFile=True, setup_values=None):
@@ -28,7 +29,7 @@ class SpcFile():
             print('No setup parameters supplied. Cannot evaluate spc file.')
 
     def create_shortened_histo_array(self, time_range, save_data=False):
-    	#time_range is a tuple of form (lower, upper) (ms)
+        #time_range is a tuple of form (lower, upper) (ms)
         self.create_array(save_data=save_data, array_type='shortened_hist', time_range=time_range)
 
     def create_histo_array(self, save_data=False):
@@ -122,16 +123,20 @@ class SpcFile():
                                     MacroTime_val+=(2**12*MacroTimeOverflows)
                                     MacroTimeOverflows=0
                                 if (time_range[0]*1e6)<=((MacroTime_val*macro_clock)-pixel_start_time)<=(time_range[1]*1e6):
-                                	PhotonTimeList.append(MicroTime_val)
+                                    PhotonTimeList.append(MicroTime_val)
                                 else:
-                                	pass
+                                    pass
                                 #PhotonDataList.append(((MacroTime_val*macro_clock), MicroTime_val, data_packet[6]))#returns macro, micro and gap flag.
                             if array_type=='hist':
                                 PhotonTimeList.append(MicroTime_val)
                         else:
                             pass   
         if save_data==True:
-            np.save('output_array.npy', self.image_arr)    
+            filename='output_array'
+            file_suffix=1
+            while exists(f"{filename}{file_suffix}.npy"):
+                file_suffix+=1
+            np.save(f"{filename}{file_suffix}.npy", self.image_arr)    
 
     def read_specific_bits(self, bit_start, bit_stop, input_val):
         bit_mask=[0,0,0,0,0,0,0,0]
@@ -205,14 +210,6 @@ class SpcFile():
             plt.hist(MicroTimes,bins=bin_number, range=(0,(self.TACRange/self.TACGain)))
             plt.show()
         return hist
-
-
-#For testing
-root=tk.Tk()
-root.withdraw()
-filename = askopenfilename(initialdir="C:\\", title="Choose an spc file")
-spcF=SpcFile(filename)
-spcF.create_shortened_histo_array((3,4),save_data=True)
 
 
 
